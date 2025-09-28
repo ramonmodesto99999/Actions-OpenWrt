@@ -17,8 +17,8 @@ on:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+  REPO_URL: https://github.com/openwrt/openwrt.git
+  REPO_BRANCH: main
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -43,7 +43,7 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq python3-setuptools swig libboost-system-dev build-essential quilt clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -54,15 +54,13 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        git clone $REPO_URL
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: Load custom feeds
+    - name: Update feeds url
       run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        sed -i -E 's;git.openwrt.org/(feed|project);github.com/openwrt;' feeds.conf.default
 
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
@@ -72,27 +70,51 @@ jobs:
 
     - name: Load custom configuration
       run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        wget https://raw.githubusercontent.com/ramonmodesto99999/Actions-OpenWrt/refs/heads/main/.config 
 
     - name: Download package
       id: package
       run: |
         cd openwrt
         make defconfig
-        make download -j8
+        make download -j$(nproc)
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
+
+    - name: patchs bbrv3
+      id: bbrv3
+      run: |
+        cd openwrt
+        cd target/linux/generic/hack-6.12/
+
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0001-net-tcp_bbr-broaden-app-limited-rate-sample-detectio.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0002-net-tcp_bbr-v2-shrink-delivered_mstamp-first_tx_msta.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0003-net-tcp_bbr-v2-snapshot-packets-in-flight-at-transmi.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0004-net-tcp_bbr-v2-count-packets-lost-over-TCP-rate-samp.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0005-net-tcp_bbr-v2-export-FLAG_ECE-in-rate_sample.is_ece.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0006-net-tcp_bbr-v2-introduce-ca_ops-skb_marked_lost-CC-m.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0007-net-tcp_bbr-v2-adjust-skb-tx.in_flight-upon-merge-in.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0008-net-tcp_bbr-v2-adjust-skb-tx.in_flight-upon-split-in.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0009-net-tcp-add-new-ca-opts-flag-TCP_CONG_WANTS_CE_EVENT.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0010-net-tcp-re-generalize-TSO-sizing-in-TCP-CC-module-AP.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0011-net-tcp-add-fast_ack_mode-1-skip-rwin-check-in-tcp_f.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0012-net-tcp_bbr-v2-record-app-limited-status-of-TLP-repa.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0013-net-tcp_bbr-v2-inform-CC-module-of-losses-repaired-b.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0014-net-tcp_bbr-v2-introduce-is_acking_tlp_retrans_seq-i.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0015-tcp-introduce-per-route-feature-RTAX_FEATURE_ECN_LOW.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0016-net-tcp_bbr-v3-update-TCP-bbr-congestion-control-mod.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0017-net-tcp_bbr-v3-ensure-ECN-enabled-BBR-flows-set-ECT-.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0018-tcp-export-TCPI_OPT_ECN_LOW-in-tcp_info-tcpi_options.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/a7ffdcae8e96eb6dece70622de121f97ff55bfab/target/linux/generic/hack-6.12/952-bbr3-0019-x86-cfi-bpf-Add-tso_segs-and-skb_marked_lost-to-bpf_.patch
+        wget https://raw.githubusercontent.com/rockdrilla/fork.openwrt/e2fa1c32f89ec0bfb726ceb96294b6b957b32d67/target/linux/generic/hack-6.12/952-bbr3-0100-krd-32-bit-fixes.patch
 
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        make -j$(nproc)
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -114,7 +136,6 @@ jobs:
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd openwrt/bin/targets/*/*
-        rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
