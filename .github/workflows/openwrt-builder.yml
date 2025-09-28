@@ -30,7 +30,7 @@ env:
 
 jobs:
   build:
-    runs-on: debian-12
+    runs-on: debian:stable
 
     steps:
     - name: Checkout
